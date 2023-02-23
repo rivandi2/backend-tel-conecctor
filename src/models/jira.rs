@@ -19,7 +19,7 @@ pub struct AvatarUrls{
 pub struct Empty {}
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Project {
+pub struct ProjectList {
    
     expand: String,
 
@@ -57,7 +57,7 @@ pub struct Project {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Event{
+pub struct EventType{
     pub id: i32,
     pub name: String
 }
