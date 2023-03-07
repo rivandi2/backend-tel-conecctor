@@ -1,4 +1,4 @@
-use crate::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Project{
@@ -45,11 +45,3 @@ pub struct Acara{
 }
 
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Channels{
-    pub id: i32,
-    pub name: String,
-    pub telegram_chatid: String,
-    pub project_id: Vec<String>,
-    pub event: Vec<String>,
-}

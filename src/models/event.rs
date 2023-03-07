@@ -1,4 +1,4 @@
-use crate::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Event{
@@ -18,7 +18,7 @@ pub struct Event{
     next_attempt_at: Option<String>,
     sucessfull_at: Option<String>,
     updated_at: String,
-    created_at: String,
+    pub created_at: String,
 } 
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ pub struct Pagination{
     order_by: String,
     dir: String,
     limit: i32,
-    next: String,
+    next: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
