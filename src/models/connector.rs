@@ -8,21 +8,23 @@ pub struct Connector{
     pub api_key: String,
     pub bot_type: String,
     pub active: String,
-    pub telegram_chatid: String,
+    pub token: String,
+    pub chatid: String,
     pub project_id: Vec<String>,
     pub event: Vec<String>,
 }
 
 impl Connector{
-    pub fn new(name:String, description: String, email: String, api_key: String, bot_type: String, telegram_chatid: String, project_id: Vec<String>, event:Vec<String>)-> Connector {
+    pub fn new(name:String, description: String, email: String, api_key: String, bot_type: String, token: String, chatid: String, project_id: Vec<String>, event:Vec<String>)-> Connector {
         Connector { 
             name, 
             description, 
             email, 
             api_key, 
             bot_type,
-            active: "true".to_owned(), 
-            telegram_chatid, 
+            active: "true".to_owned(),
+            token, 
+            chatid, 
             project_id, 
             event } 
     }
@@ -39,7 +41,8 @@ pub struct ConnectorGet{
     pub api_key: String,
     pub bot_type: String,
     pub active: String,
-    pub telegram_chatid: String,
+    pub token: String,
+    pub chatid: String,
     pub project_id: Vec<String>,
     pub event: Vec<String>,
 }
@@ -52,22 +55,8 @@ pub struct ConnectorUpdate {
     pub api_key: Option<String>,
     pub bot_type: Option<String>,
     pub active: Option<String>,
-    pub telegram_chatid: Option<String>,
+    pub token: Option<String>,
+    pub chatid: Option<String>,
     pub project_id: Option<Vec<String>>,
     pub event: Option<Vec<String>>,
-}
-
-impl ConnectorUpdate{
-    pub fn new(name:String, description: String, email: String, api_key: String, bot_type: String, telegram_chatid: String, project_id: Vec<String>, event:Vec<String>)-> Connector {
-        Connector { 
-            name, 
-            description, 
-            email, 
-            api_key, 
-            bot_type,
-            active: "true".to_owned(), 
-            telegram_chatid, 
-            project_id, 
-            event } 
-    }
 }

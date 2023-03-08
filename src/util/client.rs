@@ -5,14 +5,14 @@ use std::env;
 use std::str::FromStr;
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
-use dotenv::dotenv;
 use mongodb::bson::{Document, doc, oid::ObjectId, to_document};
 use mongodb::options::FindOptions;
 use futures::TryStreamExt;
 use teloxide::prelude::*;
 use serde_json::Value;
+use slack_hook2::{Slack, PayloadBuilder};
 
-use crate::models::{jira::{ProjectList, EventType, SaringProject},
+use crate::models::{jira::{ProjectList, SaringProject},
             event::HookdeckEvents,
             issue::Acara,
             comment::AcaraComment,
@@ -42,7 +42,6 @@ pub struct Klien
 {
     pub reqwest: reqwest::Client,
     pub mongodb: mongodb::Client,
-    pub bot: teloxide::Bot
 
 }
 
@@ -50,11 +49,9 @@ impl Klien
 {
     pub fn new() -> Self
     {
-        // "mongodb+srv://rivandi:Z0BDxmHQc9k237ES@cluster0.kixsqjq.mongodb.net/?retryWrites=true&w=majority"
         return Self{
             reqwest: reqwest::Client::new(),
             mongodb: futures::executor::block_on(mongodb::Client::with_uri_str("mongodb://rivandi:Z0BDxmHQc9k237ES@ac-xtrdikx-shard-00-00.kixsqjq.mongodb.net:27017,ac-xtrdikx-shard-00-01.kixsqjq.mongodb.net:27017,ac-xtrdikx-shard-00-02.kixsqjq.mongodb.net:27017/?ssl=true&replicaSet=atlas-fnfn1t-shard-0&authSource=admin&retryWrites=true&w=majority")).unwrap(),
-            bot: Bot::from_env()
         }
     }
 
@@ -81,43 +78,6 @@ impl Klien
         }
     }
 
-    pub async fn get_events_type(&self) -> Result<Vec<EventType>, JiraError>{
-        let result = self.get_request(
-            env::var("USER_NAME").expect("USER_NAME not found").to_owned(), 
-            env::var("PASSWORD").expect("PASSWORD not found").to_owned(), 
-            "https://telkomdevelopernetwork.atlassian.net/rest/api/3/events".to_owned())
-            .await;
-        match result {
-            Ok(text) => {
-                    let list: Vec<EventType> = serde_json::from_str(&text).unwrap();
-                    return Ok(list)
-                    }
-            Err (e) => return Err(e)
-        }
-    }
-
-    pub async fn get_hookdeck_events(&self) -> Result<String, JiraError> {
-        let result = self.get_request(
-            env::var("HOOKDECK_API_KEY").expect("APIKEYNOTFOUND").to_owned(), 
-            "".to_owned(), 
-            "https://api.hookdeck.com/2023-01-01/events".to_owned())
-            .await;
-        match result {
-            Ok(text) => {
-                    let list: HookdeckEvents = serde_json::from_str(&text).unwrap();
-                    let ev = self.check_new_event(&list.models[0].id).await;
-                    match ev.as_ref(){
-                        "lama" => return Ok("No New Event".to_owned()),
-                        _ => {
-                             let tex = self.loop_event(ev, list).await;
-                             return Ok(tex);
-                            }
-                    }
-            }
-            Err (e) => return Err(e)
-        }
-    }
-
     pub async fn get_hookdeck_events_filter(&self) -> Result<String, JiraError> {
         let col1 = self.mongodb.database("telcon").collection::<Document>("lastcreated");
         let options = FindOptions::builder().projection(doc! {
@@ -126,14 +86,13 @@ impl Klien
         let cursor = col1.find(None, options).await;
         let doc = cursor.unwrap().try_collect().await.unwrap_or_else(|_| vec![]);
         
-        // let _tes = col1.insert_one(doc!{"created_at": created}, None).await;
         let mut url = "https://api.hookdeck.com/2023-01-01/events".to_owned();
 
         if doc.is_empty(){
             let result = self.get_request(
                 env::var("HOOKDECK_API_KEY").expect("APIKEYNOTFOUND").to_owned(), 
                 "".to_owned(), 
-                "https://api.hookdeck.com/2023-01-01/events?limit=19".to_owned())
+                "https://api.hookdeck.com/2023-01-01/events?limit=50".to_owned())
                 .await;
             match result {
                 Ok(text) => {
@@ -147,20 +106,23 @@ impl Klien
             let text = serde_json::to_string(&doc);
             let tex: Vec<LastCreated>  = serde_json::from_str(&text.unwrap()).unwrap();
             let url = format!("{}?created_at[gt]={}", url, tex[0].created_at);
-            return Ok(url)
-            // let result = self.get_request(
-            //     env::var("HOOKDECK_API_KEY").expect("APIKEYNOTFOUND").to_owned(), 
-            //     "".to_owned(), 
-            //     url)
-            //     .await;
-            // match result {
-            //     Ok(text) => {
-            //             let list: HookdeckEvents = serde_json::from_str(&text).unwrap();
-            //             let tex = self.loop_event_filter(list).await;
-            //             return Ok(tex);
-            //     }
-            //     Err (e) => return Err(e)
-            // }
+            let result = self.get_request(
+                env::var("HOOKDECK_API_KEY").expect("APIKEYNOTFOUND").to_owned(), 
+                "".to_owned(), 
+                url)
+                .await;
+            match result {
+                Ok(text) => {
+                    let list: HookdeckEvents = serde_json::from_str(&text).unwrap();
+                    if list.models.is_empty(){
+                        return Ok("No New Event".to_owned())
+                    } else {
+                        let tex = self.loop_event_filter(list).await;
+                        return Ok(tex)
+                    }      
+                },
+                Err (e) => return Err(e)
+            }
         }
       
 
@@ -172,7 +134,7 @@ impl Klien
         let _drp = col1.delete_many(doc!{}, None).await;
         let _tes = col1.insert_one(doc!{"created_at": &events.models[0].created_at}, None).await;
         
-        for ev in events.models {
+        for ev in events.models.iter().rev() {
             let data= self.get_hookdeck_events_data(&ev.id).await;
                 match data {
                     Ok(val) => { self.add_event(val).await;
@@ -184,22 +146,6 @@ impl Klien
         }
         return format!("{} New Event",i)
     }
-
-    pub async fn loop_event(&self, batas: String, events: HookdeckEvents)-> String {
-        let mut i = 0;
-        while &events.models[i].id != &batas && i < 10{
-            let data= self.get_hookdeck_events_data(&events.models[i].id).await;
-                match data {
-                    Ok(val) => { self.add_event(val).await;
-                                        self.filter_events().await; 
-                    },
-                    Err(_e) => println!("Error"),
-                };
-                i+=1;
-        }
-        return format!("{} New Event",i)
-    }
-
 
     pub async fn get_hookdeck_events_data(&self, id: &str) -> Result<Value, JiraError> {
         let url = format!("https://api.hookdeck.com/2023-01-01/events/{}", id);
@@ -237,19 +183,6 @@ impl Klien
                     Err(_e) => return Err(JiraError::TextChange)
                 }
             }
-    }
-
-    pub async fn add_projects(&self, pro: Vec<ProjectList>) {
-        let coll = self.mongodb.database("telcon").collection::<Document>("projects");
-        let _drp = coll.delete_many(doc!{}, None).await;
-        for pr in pro {
-            let docu = doc! {
-                "id": pr.id,
-                "key": pr.key,
-                "name": pr.name
-            };
-            let _result = coll.insert_one(docu, None).await;      
-        }
     }
 
     pub async fn add_event(&self, val: Value) {
@@ -345,43 +278,30 @@ impl Klien
 
 
     pub async fn kirim_notif(&self, project: &str, event: &str, created: &str, by: &str, connectors: Vec<Connector>) -> HandlerResult  {
-        for cha in connectors {
-            let text =  format!("New Jira Notification!\nProject: {:?}\nEvent: {:?}\nCreated at: {:?}\nBy: {:?}
-                                        ", project, 
-                                           event,
-                                           created,  
-                                           by, 
-                                        );
-            let _send = self.bot.send_message(cha.telegram_chatid, text).await?;                        
+        for con in connectors {
+            let text =  format!("New Jira Notification!\nProject: {}\nEvent: {}\nCreated at: {}\nBy: {}
+            ", project, 
+               event,
+               created,  
+               by, 
+            );  
+            if con.bot_type.to_lowercase().eq("telegram"){    
+                let bot = teloxide::Bot::new(con.token);
+                let _send = bot.send_message(con.chatid, text).await;
+            }  
+            else if con.bot_type.to_lowercase().eq("slack")  
+                {
+                let slack = Slack::new(con.token).unwrap();
+                let p = PayloadBuilder::new()
+                    .text(text)
+                    .build()
+                    .unwrap();
+
+                let _res = slack.send(&p).await;
+              
+            }    
         }
         Ok(())
-    }
-
-    pub async fn check_new_event (&self, eid: &str) -> String {
-        let col1 = self.mongodb.database("telcon").collection::<Document>("lastevent");
-        let options = FindOptions::builder().projection(doc! {
-            "_id": 0
-        }).build();
-        let cursor = col1.find(None, options).await;
-        let doc = cursor.unwrap().try_collect().await.unwrap_or_else(|_| vec![]);
-
-        if doc.is_empty(){
-            let _tes = col1.insert_one(doc!{"id": eid}, None).await;
-            return "baru".to_owned()
-        } else {
-            let text = serde_json::to_string(&doc);
-            let tex: Vec<LastEvent>  = serde_json::from_str(&text.unwrap()).unwrap();
-
-            if tex[0].id.eq(&eid) {
-                return "lama".to_owned()
-            } else {
-                let batas = &tex[0].id;
-                let _drp = col1.delete_many(doc!{}, None).await;
-                let _tes = col1.insert_one(doc!{"id": eid}, None).await;
-
-                return batas.to_owned()
-            }
-        }
     }
 
     pub async fn add_connector(&self, payload: &Connector) -> Result<mongodb::results::InsertOneResult, mongodb::error::Error> {
@@ -392,7 +312,8 @@ impl Klien
             payload.email.clone(),
             payload.api_key.clone(),
             payload.bot_type.clone(),
-            payload.telegram_chatid.clone(),
+            payload.token.clone(),
+            payload.chatid.clone(),
             payload.project_id.clone(),
             payload.event.clone()
         );
@@ -412,8 +333,8 @@ impl Klien
         }
     }
 
-    pub async fn get_one_connector(&self, id: String) -> Result<Vec<Connector>, mongodb::error::Error> {
-        let coll = self.mongodb.database("telcon").collection::<Connector>("connectors");
+    pub async fn get_one_connector(&self, id: String) -> Result<Vec<ConnectorGet>, mongodb::error::Error> {
+        let coll = self.mongodb.database("telcon").collection::<ConnectorGet>("connectors");
         let filter1 = doc! {
             "_id": ObjectId::from_str(&id).unwrap()
         };

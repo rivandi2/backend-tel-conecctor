@@ -1,18 +1,13 @@
-use actix_web::{get, post, web, web::{Data, resource}, App, HttpResponse, HttpServer, Responder, middleware::Logger};
-use mongodb::{bson::doc, options::IndexOptions, Client, Collection, IndexModel};
+use actix_web::{web, web::{Data, resource}, App, HttpServer, middleware::Logger};
 
 mod routes;
 mod util;
 mod models;
 extern crate serde_json;
 
-use routes::{event, jira, connector};
+use routes::{jira, connector};
 use util::client::Klien;
 use dotenv::dotenv;
-
-async fn manual() -> impl Responder {
-    HttpResponse::Ok().body("Heyo")
-}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()>{
@@ -24,7 +19,7 @@ async fn main() -> std::io::Result<()>{
     actix_rt::spawn(async move {
         loop {
             let duration = std::time::Duration::from_secs(60);
-            let _tes = klien.get_hookdeck_events().await;
+            let _tes = klien.get_hookdeck_events_filter().await;
             match _tes {
                 Ok(events) => println!("{:?}", events),
                 Err(e)=> println!("{:?}", e)
@@ -33,12 +28,10 @@ async fn main() -> std::io::Result<()>{
         }
     });
    
-    // .service(resource("/events").route(web::get().to(event::get)))
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
             .app_data(Data::new(Klien::new()))
-            .route("/hey", web::get().to(manual))
             .service(resource("/projects").route(web::get().to(jira::get)))
             .service( web::scope("/connector")
                 .route("", web::post().to(connector::post))

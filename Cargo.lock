@@ -198,6 +198,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "slack-hook2",
  "teloxide",
  "thiserror",
  "tokio",
@@ -2026,6 +2027,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4614a76b2a8be0058caa9dbbaf66d988527d86d003c11a94fbd335d7661edcef"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "slack-hook2"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f97563c649cae6c8554adde1d172f53acf9f25e0008cce4003fa542a0e2e30f0"
+dependencies = [
+ "chrono",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "thiserror",
+ "url",
 ]
 
 [[package]]
