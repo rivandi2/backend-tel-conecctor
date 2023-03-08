@@ -10,12 +10,12 @@ pub struct Connector{
     pub active: String,
     pub token: String,
     pub chatid: String,
-    pub project_id: Vec<String>,
+    pub project: Vec<Project>,
     pub event: Vec<String>,
 }
 
 impl Connector{
-    pub fn new(name:String, description: String, email: String, api_key: String, bot_type: String, token: String, chatid: String, project_id: Vec<String>, event:Vec<String>)-> Connector {
+    pub fn new(name:String, description: String, email: String, api_key: String, bot_type: String, token: String, chatid: String, project: Vec<Project>, event:Vec<String>)-> Connector {
         Connector { 
             name, 
             description, 
@@ -25,7 +25,7 @@ impl Connector{
             active: "true".to_owned(),
             token, 
             chatid, 
-            project_id, 
+            project, 
             event } 
     }
 }
@@ -43,7 +43,7 @@ pub struct ConnectorGet{
     pub active: String,
     pub token: String,
     pub chatid: String,
-    pub project_id: Vec<String>,
+    pub project: Vec<Project>,
     pub event: Vec<String>,
 }
 
@@ -57,6 +57,12 @@ pub struct ConnectorUpdate {
     pub active: Option<String>,
     pub token: Option<String>,
     pub chatid: Option<String>,
-    pub project_id: Option<Vec<String>>,
+    pub project: Option<Vec<Project>>,
     pub event: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Project {
+    id: String,
+    name: String
 }

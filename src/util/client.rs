@@ -16,7 +16,7 @@ use crate::models::{jira::{ProjectList, SaringProject},
             event::HookdeckEvents,
             issue::Acara,
             comment::AcaraComment,
-            connector::{Connector, ConnectorGet},
+            connector::{Connector, ConnectorGet, Project},
 };
 
 #[derive(Error, Debug)]
@@ -261,7 +261,7 @@ impl Klien
     pub async fn find_connectors(&self, project: &str, event: &str) -> Vec<Connector>{
         let col2 = self.mongodb.database("telcon").collection::<Document>("connectors");
         let filter = doc! {
-            "project_id": project,
+            "project.id": project,
             "event": event,
             "active": "true"
         };
@@ -314,7 +314,7 @@ impl Klien
             payload.bot_type.clone(),
             payload.token.clone(),
             payload.chatid.clone(),
-            payload.project_id.clone(),
+            payload.project.clone(),
             payload.event.clone()
         );
         let res = coll.insert_one(new, None).await;

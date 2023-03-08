@@ -15,6 +15,6 @@ pub async fn get(client: Data<Klien>, credential: web::Json<Cred>) -> HttpRespon
     let get = client.get_projects(&credential.email, &credential.api_key).await;
     match get {
         Ok(projects) => return HttpResponse::Ok().json(projects),
-        Err(e)=> return HttpResponse::BadRequest().finish()
+        Err(_e)=> return HttpResponse::BadRequest().finish()
     };
 }
