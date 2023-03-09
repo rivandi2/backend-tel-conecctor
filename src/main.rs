@@ -8,6 +8,8 @@ extern crate serde_json;
 use routes::{jira, connector};
 use util::client::Klien;
 use dotenv::dotenv;
+use actix_cors::Cors;
+
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()>{
@@ -30,6 +32,7 @@ async fn main() -> std::io::Result<()>{
    
     HttpServer::new(move || {
         App::new()
+            .wrap(Cors::permissive())
             .wrap(Logger::default())
             .app_data(Data::new(Klien::new()))
             .service(resource("/projects").route(web::get().to(jira::get)))

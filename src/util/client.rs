@@ -16,7 +16,7 @@ use crate::models::{jira::{ProjectList, SaringProject},
             event::HookdeckEvents,
             issue::Acara,
             comment::AcaraComment,
-            connector::{Connector, ConnectorGet, Project},
+            connector::{Connector, ConnectorGet},
 };
 
 #[derive(Error, Debug)]
@@ -86,7 +86,7 @@ impl Klien
         let cursor = col1.find(None, options).await;
         let doc = cursor.unwrap().try_collect().await.unwrap_or_else(|_| vec![]);
         
-        let mut url = "https://api.hookdeck.com/2023-01-01/events".to_owned();
+        let url = "https://api.hookdeck.com/2023-01-01/events".to_owned();
 
         if doc.is_empty(){
             let result = self.get_request(
