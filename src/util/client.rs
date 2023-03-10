@@ -5,6 +5,7 @@ use std::env;
 use std::str::FromStr;
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
+use chrono::{DateTime, FixedOffset};
 use mongodb::bson::{Document, doc, oid::ObjectId, to_document};
 use mongodb::options::FindOptions;
 use futures::TryStreamExt;
@@ -138,7 +139,7 @@ impl Klien
             let data= self.get_hookdeck_events_data(&ev.id).await;
                 match data {
                     Ok(val) => { self.add_event(val).await;
-                                        self.filter_events().await; 
+                                        self.filter_events(&ev.created_at).await; 
                     },
                     Err(_e) => println!("Error"),
                 };
@@ -191,7 +192,7 @@ impl Klien
         let _res = coll.insert_one(val, None).await;
     }
 
-    pub async fn filter_events(&self) {
+    pub async fn filter_events(&self, time: &str) {
         let col1 = self.mongodb.database("telcon").collection::<Document>("event");
         let filter1 = doc! {
             "data.headers.user-agent": "Atlassian Webhook HTTP Client",
@@ -227,7 +228,7 @@ impl Klien
                 let _tes = self.kirim_notif(
                     &tex[0].data.body.issue.fields.project.name, 
                     &tex[0].data.body.webhook_event,
-                    &tex[0].data.body.issue.fields.created,  
+                    time,  
                     &tex[0].data.body.user.display_name,  
                     tex2).await;
             }
@@ -249,7 +250,7 @@ impl Klien
                 let _tes = self.kirim_notif(
                     &tex[0].data.body.issue.fields.project.name, 
                     &tex[0].data.body.webhook_event,
-                    &tex[0].data.body.comment.created,  
+                    time,  
                     &tex[0].data.body.comment.author.display_name,
                     tex2).await;
             }
@@ -278,11 +279,26 @@ impl Klien
 
 
     pub async fn kirim_notif(&self, project: &str, event: &str, created: &str, by: &str, connectors: Vec<Connector>) -> HandlerResult  {
+        let datetime = DateTime::parse_from_rfc3339(created).unwrap();
+        let indo_time = datetime.with_timezone(&FixedOffset::east_opt(7 * 3600).unwrap());
+        let time = format!("{}", indo_time.format("%Y-%m-%d %H:%M:%S"));
+        let mut evo = "".to_owned();
+
+        match event{
+            "jira:issue_created" => evo = "Issue Created".to_owned(),
+            "jira:issue_updated" => evo = "Issue Updated".to_owned(),
+            "jira:issue_deleted" => evo = "Issue Deleted".to_owned(),
+            "comment_created" => evo = "Comment Created".to_owned(),
+            "comment_updated" => evo = "Comment Updated".to_owned(),
+            "comment_deleted" => evo = "Comment Deleted".to_owned(),
+            _=> println!("no event")
+        }
+        
         for con in connectors {
             let text =  format!("New Jira Notification!\nProject: {}\nEvent: {}\nCreated at: {}\nBy: {}
             ", project, 
-               event,
-               created,  
+               evo,
+               time,  
                by, 
             );  
             if con.bot_type.to_lowercase().eq("telegram"){    

@@ -10,7 +10,7 @@ pub struct Cred{
     pub api_key: String,
 }
 
-pub async fn get(client: Data<Klien>, credential: web::Json<Cred>) -> HttpResponse {
+pub async fn get(client: Data<Klien>, credential: web::Query<Cred>) -> HttpResponse {
 
     let get = client.get_projects(&credential.email, &credential.api_key).await;
     match get {
