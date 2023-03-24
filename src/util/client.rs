@@ -1,6 +1,3 @@
-
-type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
-
 use std::env;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, FixedOffset};
@@ -31,7 +28,7 @@ pub struct LastCreated{
 
 #[derive(Derivative)]
 #[derivative(Debug, Clone)]
-pub struct Klien 
+pub struct Client
 {
     pub reqwest: reqwest::Client,
     pub mongodb: mongodb::Client,
@@ -40,14 +37,14 @@ pub struct Klien
     pub s3: S3Client
 }
 
-impl Klien
+impl Client
 {
     pub fn new() -> Self
     {
         let reqwest= reqwest::Client::new();
-        let mongodb= futures::executor::block_on(mongodb::Client::with_uri_str("mongodb://rivandi:Z0BDxmHQc9k237ES@ac-xtrdikx-shard-00-00.kixsqjq.mongodb.net:27017,ac-xtrdikx-shard-00-01.kixsqjq.mongodb.net:27017,ac-xtrdikx-shard-00-02.kixsqjq.mongodb.net:27017/?ssl=true&replicaSet=atlas-fnfn1t-shard-0&authSource=admin&retryWrites=true&w=majority")).unwrap();
+        let mongodb= futures::executor::block_on(mongodb::Client::with_uri_str(env::var("MONGODB_URI").expect("MONGODB_URI must be defined"))).unwrap();
 
-        let creds = AwsCredentials::new("DO00HWJRZGDYX7WLQ63C".to_owned(), "XJRjx4vkpKTL36fkrCOVsOG5fjJtVbo59FMwA3IDCww".to_owned(), None, None);
+        let creds = AwsCredentials::new(env::var("BUCKET_KEY").expect("BUCKET_KEY must be defined"), env::var("BUCKET_SECRET").expect("BUCKET_SECRET must be defined"), None, None);
         let provider = StaticProvider::from(creds);
     
         let s3 = S3Client::new_with(
@@ -250,7 +247,7 @@ impl Klien
         }
     }
 
-    pub async fn kirim_notif(&self, project: &str, event: &str, created: &str, by: &str, connectors: Vec<Connector>) -> HandlerResult  {
+    pub async fn kirim_notif(&self, project: &str, event: &str, created: &str, by: &str, connectors: Vec<Connector>) -> Result<(), Box<dyn std::error::Error + Send + Sync>>  {
         let time = format!("{}", DateTime::parse_from_rfc3339(created).unwrap()
             .with_timezone(&FixedOffset::east_opt(7 * 3600).unwrap())
             .format("%d/%m/%Y %H:%M"));
@@ -394,7 +391,7 @@ impl Klien
                 ..Default::default()
             }).await{
                 Ok(_) => return Ok("Connector successfuly deleted".to_owned()),
-                Err(e) => return Ok(e.to_string())
+                Err(e) => return Err(ConnectorError::RusError(e.to_string()))
             }
         } else {
             return Err(ConnectorError::ConNotFound)
@@ -482,13 +479,13 @@ impl Klien
                             ..Default::default()
                         }).await {
                             Ok(_) =>  return Ok("Connector successfuly updated! ps.new name".to_owned()),
-                            Err(e) => return Ok(e.to_string())
+                            Err(e) => return Err(ConnectorError::RusError(e.to_string()))
                         }
                     } else {
                         return Ok("Connector successfuly updated!".to_owned())
                     }
                 }, 
-                Err(e) => return Ok(e.to_string())
+                Err(e) => return Err(ConnectorError::RusError(e.to_string()))
             }
         } else {
             return Err(ConnectorError::ConNotFound)

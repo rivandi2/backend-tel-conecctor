@@ -7,7 +7,7 @@ mod errortype;
 extern crate serde_json;
 
 use routes::{jira, connector};
-use util::client::Klien;
+use util::client::Client;
 use dotenv::dotenv;
 use actix_cors::Cors;
 
@@ -16,23 +16,26 @@ async fn main() -> std::io::Result<()>{
     dotenv().ok();
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
-    let klien = Klien::new();
+    let client = Client::new();
     
     actix_rt::spawn(async move {
         loop {
-            match klien.get_hookdeck_events_filter().await {
+            match client.get_hookdeck_events_filter().await {
                 Ok(events) => println!("{:?}", events),
                 Err(e)=> println!("{:?}", e)
             };
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         }
     });
-   
+    
+    let bind_ip = std::env::var("BIND_IP").expect("BIND_IP must be defined");
+    let bind_port = std::env::var("BIND_PORT").expect("BIND_PORT must be defined").parse::<u16>().unwrap_or(8082);
+
     HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
             .wrap(Logger::default())
-            .app_data(Data::new(Klien::new()))
+            .app_data(Data::new(Client::new()))
             .service(resource("/projects").route(web::get().to(jira::get)))
             .service( web::scope("/connector")
                 .route("", web::post().to(connector::post))
@@ -42,7 +45,7 @@ async fn main() -> std::io::Result<()>{
                 .route("{name}", web::put().to(connector::update))
                 )
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind((bind_ip, bind_port))?
     .run()
     .await
 }

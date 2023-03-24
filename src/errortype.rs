@@ -11,7 +11,7 @@ pub enum JiraError {
     #[error("Incorect api key")] ApiKeyError,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum ConnectorError {
     #[error("Connector not found")] ConNotFound,
     #[error("Connector name already exist")] ConCreateExist,
