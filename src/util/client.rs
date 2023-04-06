@@ -15,11 +15,13 @@ use derivative::Derivative;
 
 use crate::models::{jira::{ProjectList, SaringProject},
             event::HookdeckEvents,
-            connector::Connector };
+            connector::Connector, 
+            log::Log};
 use crate::errortype::{JiraError, ConnectorError};
 
 const BUCKET: &'static str = "atlassian-connector";
 const FOLDER: &'static str = "Connectors";
+const LOGS: &'static str = "logs";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LastCreated{
@@ -262,26 +264,102 @@ impl Client
             "comment_deleted" => evo = "Comment Deleted".to_owned(),
             _=> println!("no event")
         }
+
+        let twili = twilio::Client::new("AC43c81da3609460c9dad7db7e54866b57", "ecdc188c518d56fad25d7eafadcc10e8");
+        let from = "whatsapp:+14155238886";
+        
         
         for con in connectors {
+            let mut attempt = 0;
             let text =  format!("New Jira Notification!\nProject: {}\nEvent: {}\nCreated at: {}\nBy: {}
             ", project, 
                evo,
                time,  
                by, 
             );
-            if con.bot_type.to_lowercase().eq("telegram") {    
-                let _send = teloxide::Bot::new(con.token).send_message(con.chatid, text).await;
+            if con.bot_type.to_lowercase().eq("telegram") {  
+                loop {
+                    attempt+=1;
+                    let send = teloxide::Bot::new(con.token.clone()).send_message(con.chatid.clone(), text.clone()).await;
+                    if send.is_ok(){
+                        self.write_log(con.name, event.to_string(), "sent".to_string(), attempt, time.clone()).await;
+                        break
+                    } else if attempt == 3{
+                        self.write_log(con.name, event.to_string(), "fail".to_string(), attempt, time.clone()).await;
+                        break
+                    }
+                }  
             }  
             else if con.bot_type.to_lowercase().eq("slack") {
-                let _res = Slack::new(con.token).unwrap()
-                    .send(&PayloadBuilder::new()
-                    .text(text)
-                    .build()
-                    .unwrap()).await;
-            }    
+                loop {
+                    attempt+=1;
+                    let send = Slack::new(con.token.clone()).unwrap()
+                        .send(&PayloadBuilder::new()
+                        .text(text.clone())
+                        .build()
+                        .unwrap()).await;
+                    if send.is_ok(){
+                        self.write_log(con.name, event.to_string(), "sent".to_string(), attempt, time.clone()).await;
+                        break
+                    } else if attempt == 3{
+                        self.write_log(con.name, event.to_string(), "fail".to_string(), attempt, time.clone()).await;
+                        break
+                    }
+                }
+            } else if con.bot_type.to_lowercase().eq("whatsapp") {   
+                loop {
+                    attempt+=1;      
+                    let send = twili.send_message(twilio::OutboundMessage::new(from, &format!("whatsapp:{}", con.token), &text)).await;
+                    if send.is_ok(){
+                        self.write_log(con.name, event.to_string(), "sent".to_string(), attempt, time.clone()).await;
+                        break
+                    } else if attempt == 3{
+                        self.write_log(con.name, event.to_string(), "fail".to_string(), attempt, time.clone()).await;
+                        break
+                    }
+                }
+            }       
         }
         Ok(())
+    }
+
+    pub async fn write_log(&self, target_name: String, ev: String, stat: String, att: i32, tim: String) {
+        match self.get_one_log(target_name.clone()).await {
+            Ok(mut rec)=> {
+                rec.push(Log { 
+                    event: ev,
+                    status: stat,
+                    attempt: att,
+                    time: tim,
+                });
+                self.add_log(target_name, Some(rec)).await;
+            },
+            Err(e) => println!("{:?}", e)
+        }
+    }
+
+    pub async fn get_one_log(&self, target_name: String) -> Result< Vec<Log>, ConnectorError>{
+        match self.s3.get_object(GetObjectRequest {
+            bucket: BUCKET.to_owned(),
+            key: format!("{}/{}.csv", LOGS.to_owned(), target_name),
+            ..Default::default()
+        }).await {
+            Ok(ob) =>{
+                let result = tokio::task::spawn_blocking(|| {
+                    let mut object_data = ob.body.unwrap().into_blocking_read();
+                    let mut buffer = Vec::new();
+                    object_data.read_to_end(&mut buffer);
+    
+                    let mut csv_reader = csv::ReaderBuilder::new()
+                        .from_reader(std::io::BufReader::new(&buffer[..]));
+                    let records: Vec<Log> = csv_reader.deserialize::<Log>().map(|res| res.unwrap()).collect();
+                    return records
+                }).await.expect("Task panicked");
+                Ok(result)
+            },
+            Err(e) => return  Err(ConnectorError::RusError(e.to_string()))
+        }
+        
     }
 
     pub async fn list_bucket_path(&self) -> Result<Vec<String>, ConnectorError>{    
@@ -355,6 +433,29 @@ impl Client
             } 
         }
     }
+
+    //redundan
+    #[allow(warnings)]
+    pub async fn init_log_folder(&self) {
+        match self.s3.head_object(HeadObjectRequest {
+            bucket: BUCKET.to_string(),
+            key: format!("{}/", LOGS.to_owned()),
+            ..Default::default()
+        }).await {
+            Ok(_) => { println!("Directory already exist") },
+            Err(_) => {
+                match self.s3.put_object(PutObjectRequest {
+                    bucket: BUCKET.to_owned(),
+                    key: format!("{}/", LOGS.to_owned()),
+                    body: None,
+                    ..Default::default()
+                }).await{
+                    Ok(_) => println!("Directory successfully created"),
+                    Err(e) => println!("{:?}", e.to_string())
+                }
+            } 
+        }
+    }
     
     pub async fn connector_exist(&self, name: &str) -> bool {
         match self.s3.head_object(HeadObjectRequest {
@@ -377,12 +478,39 @@ impl Client
                 body: Some((serde_yaml::to_string(&payload).unwrap().into_bytes()).into()),
                 ..Default::default()
             }).await{
-                Ok(_) => return Ok("Connector successfuly created".to_owned()),
+                Ok(_) => {
+                    match self.add_log(payload.name.clone(), None).await{
+                        Ok(_) => return Ok("Connector successfuly created".to_owned()),
+                        Err (e) => return Err(ConnectorError::RusError(e.to_string()))
+                    }
+                },
                 Err(e) => return Err(ConnectorError::RusError(e.to_string()))
             }
         }
     }
     
+    pub async fn add_log(&self, name: String, rec: Option<Vec<Log>>) -> Result<String, ConnectorError> {
+            let mut wtr = csv::Writer::from_writer(vec![]);
+            wtr.write_record(&["event","status","attempt","time"]);
+            if rec.is_some() {
+                for re in rec.unwrap() {
+                    wtr.write_record(&[re.event, re.status, re.attempt.to_string(), re.time]);
+                }
+            }
+            wtr.flush();
+            let data = String::from_utf8(wtr.into_inner().unwrap()).unwrap();
+    
+            match self.s3.put_object(PutObjectRequest {
+                bucket: BUCKET.to_owned(),
+                key: format!("{}/{}.csv", LOGS.to_owned(), name),
+                body: Some(data.into_bytes().into()),
+                ..Default::default()
+            }).await{
+                Ok(_) => return Ok("Log successfuly created".to_owned()),
+                Err(e) => return Err(ConnectorError::RusError(e.to_string()))
+            }
+    }
+
     pub async fn delete_connector(&self, target_name: String) -> Result<String, ConnectorError> {
         if self.connector_exist(&target_name).await {
             match self.s3.delete_object( DeleteObjectRequest  {
@@ -390,7 +518,14 @@ impl Client
                 key: format!("{}/{}.yml", FOLDER.to_owned(), target_name),
                 ..Default::default()
             }).await{
-                Ok(_) => return Ok("Connector successfuly deleted".to_owned()),
+                Ok(_) => {
+                    let _res = self.s3.delete_object( DeleteObjectRequest  {
+                        bucket: BUCKET.to_owned(),
+                        key: format!("{}/{}.csv", LOGS.to_owned(), target_name),
+                        ..Default::default()
+                    }).await;
+                    return Ok("Connector successfuly deleted".to_owned())
+                },
                 Err(e) => return Err(ConnectorError::RusError(e.to_string()))
             }
         } else {
@@ -471,14 +606,23 @@ impl Client
                 body: Some((serde_yaml::to_string(&payload).unwrap().into_bytes()).into()),
                 ..Default::default()
             }).await{
-                Ok(_) => {
+                Ok(_) => {          
                     if &payload.name != &target_name {
                         match self.s3.delete_object(DeleteObjectRequest  {
                             bucket: BUCKET.to_owned(),
                             key: format!("{}/{}.yml", FOLDER.to_owned(), target_name),
                             ..Default::default()
                         }).await {
-                            Ok(_) =>  return Ok("Connector successfuly updated! ps.new name".to_owned()),
+                            Ok(_) =>  {
+                                self.add_log(payload.name.clone(), Some(self.get_one_log(target_name.clone()).await.unwrap())).await;
+                                self.s3.delete_object(DeleteObjectRequest  {
+                                    bucket: BUCKET.to_owned(),
+                                    key: format!("{}/{}.csv", LOGS.to_owned(), target_name),
+                                    ..Default::default()
+                                }).await;
+
+                                return Ok("Connector successfuly updated! ps.new name".to_owned())
+                            },
                             Err(e) => return Err(ConnectorError::RusError(e.to_string()))
                         }
                     } else {
