@@ -4,29 +4,20 @@ mod routes;
 mod util;
 mod models;
 mod errortype;
+mod actions;
+mod client;
 extern crate serde_json;
 
-use routes::{jira, connector};
-use util::client::Client;
+use routes::{jira, connector, event};
 use dotenv::dotenv;
 use actix_cors::Cors;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()>{
     dotenv().ok();
+
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
-    let client = Client::new();
-    
-    actix_rt::spawn(async move {
-        loop {
-            match client.get_hookdeck_events_filter().await {
-                Ok(events) => println!("{:?}", events),
-                Err(e)=> println!("{:?}", e)
-            };
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        }
-    });
     
     let bind_ip = std::env::var("BIND_IP").expect("BIND_IP must be defined");
     let bind_port = std::env::var("BIND_PORT").expect("BIND_PORT must be defined").parse::<u16>().unwrap_or(8082);
@@ -35,7 +26,8 @@ async fn main() -> std::io::Result<()>{
         App::new()
             .wrap(Cors::permissive())
             .wrap(Logger::default())
-            .app_data(Data::new(Client::new()))
+            .app_data(Data::new(client::rusoto::Client::new()))
+            .app_data(Data::new(client::jira::Client::new()))
             .service(resource("/projects").route(web::get().to(jira::get)))
             .service( web::scope("/connector")
                 .route("", web::post().to(connector::post))
@@ -44,6 +36,7 @@ async fn main() -> std::io::Result<()>{
                 .route("{name}", web::delete().to(connector::delete))
                 .route("{name}", web::put().to(connector::update))
                 )
+            .service(resource("/event/telkomdevelopernetwork").route(web::post().to(event::post)))    
     })
     .bind((bind_ip, bind_port))?
     .run()
