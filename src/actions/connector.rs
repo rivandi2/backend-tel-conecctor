@@ -26,7 +26,6 @@ pub async fn add_connector(db: &S3Client, payload: &Connector) -> Result<String,
                     Ok(_) => return Ok("Connector successfuly created".to_owned()),
                     Err (e) => return Err(ConnectorError::RusError(e.to_string()))
                 }
-                // return Ok("Connector successfuly created".to_owned())
             },
             Err(e) => return Err(ConnectorError::RusError(e.to_string()))
         }

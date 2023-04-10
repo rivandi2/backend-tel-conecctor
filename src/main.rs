@@ -1,7 +1,6 @@
 use actix_web::{web, web::{Data, resource}, App, HttpServer, middleware::Logger};
 
 mod routes;
-mod util;
 mod models;
 mod errortype;
 mod actions;
