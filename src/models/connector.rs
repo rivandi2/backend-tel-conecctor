@@ -10,6 +10,8 @@ pub struct Connector{
     pub token: String,
     pub chatid: String,
     pub active: bool,
+    pub schedule: bool,
+    pub duration: String,
     pub project: Vec<ProjectID>,
     pub event: Vec<String>,
 }

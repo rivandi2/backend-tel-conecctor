@@ -70,7 +70,7 @@ pub async fn update_connector(db: &S3Client, target_name: String, payload: &Conn
             if let Err(_e) = bot.get_chat(payload.chatid.clone()).send().await {
                 return Err(ConnectorError::ChatidInval)
             }
-        } else {
+        } else if payload.bot_type.to_lowercase() == "slack".to_owned() {
             match slack_hook2::Slack::new(&payload.token) {
                 Ok(s)=> {
                     if let Err(_) = s.send(&slack_hook2::PayloadBuilder::new()

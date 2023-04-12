@@ -122,13 +122,28 @@ pub async fn process_event(db: &S3Client, val: Value) -> Result<String, String>{
 pub async fn find_connectors(db: &S3Client, project_id: &str, event: &str) -> Option<Vec<Connector>> {
     match connector::get_connectors(&db).await {
         Ok(cons) => {
+            let now = (chrono::Utc::now() + chrono::Duration::hours(7)).naive_utc().time();
+
             let filtered = cons
-            .into_iter()
-            .filter(|con| con.project.iter().any(|proyek|proyek.id == project_id)
-                && con.event.iter().any(|even| even.eq(&event))
-                && con.active
-            )
-            .collect::<Vec<_>>();
+                .into_iter()
+                .filter(|con| con.project.iter().any(|proyek|proyek.id == project_id)
+                    && con.event.iter().any(|even| even.eq(&event))
+                    && con.active
+                    && if con.schedule {
+                        let split: Vec<&str> = con.duration.split('-').collect();
+
+                        if now >= chrono::NaiveTime::parse_from_str(split[0], "%H:%M").unwrap() 
+                        && now <= chrono::NaiveTime::parse_from_str(split[1], "%H:%M").unwrap() 
+                        {
+                            return true
+                        } else {
+                            return false
+                        }
+                    } else {
+                        return true
+                    }
+                )
+                .collect::<Vec<_>>();
 
             if filtered.len() == 0 { None } 
             else{ return Some(filtered) }
@@ -154,6 +169,7 @@ pub async fn kirim_notif(db: &S3Client,
         .with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap())
         .format("%d/%m/%Y %H:%M").to_string();
     let mut evo = "".to_owned();
+    
 
     match event{
         "jira:issue_created" => evo = "created new issue".to_owned(),
