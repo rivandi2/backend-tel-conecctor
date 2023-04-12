@@ -29,6 +29,10 @@ pub async fn process_event(db: &S3Client, val: Value) -> Result<String, String>{
             })    
         }).unwrap_or_else(|| "".to_string());  
 
+    let issue_key = val.get("issue").and_then(|issue|{
+        issue.get("key").and_then(|v| v.as_str().map(String::from))       
+    }).unwrap_or_else(|| "".to_string());
+
     let summary = val.get("issue").and_then(|issue|{
         issue.get("fields").and_then(|fields|{
                 fields.get("summary").and_then(|v| v.as_str().map(String::from))
@@ -53,25 +57,25 @@ pub async fn process_event(db: &S3Client, val: Value) -> Result<String, String>{
 
     let mut user = "u".to_string();
 
-    let mut changes = Vec::<String>::new();
+    let mut changes = String::new();
 
-    let mut comment: Option<String> = None;
+    let mut comment =  String::new();
 
     if webhook_event.contains("issue") {
         user = val.get("user").and_then(|user|{
                     user.get("displayName").and_then(|v| v.as_str().map(String::from)) 
             }).unwrap_or_else(|| "".to_string());
 
-        if webhook_event.contains("issue_updated") {
+        if webhook_event.contains("updated") {
             let items = val.get("changelog").and_then(|changelog| { 
                     changelog.get("items").and_then(|items| items.as_array())
                 }).unwrap();
 
             for it in items{
-                changes.push( format!("{}: {} -> {}", 
+                changes.push_str(&format!("{}: {} -> {}\n", 
                     it.get("field").and_then(|v| v.as_str().map(String::from)).unwrap_or("".to_string()), 
-                    it.get("fromString").and_then(|v| v.as_str().map(String::from)).unwrap_or("".to_string()), 
-                    it.get("toString").and_then(|v| v.as_str().map(String::from)).unwrap_or("".to_string()))
+                    it.get("fromString").and_then(|v| v.as_str().map(String::from)).unwrap_or("null".to_string()), 
+                    it.get("toString").and_then(|v| v.as_str().map(String::from)).unwrap_or("null".to_string()))
                 );
             }    
         }
@@ -83,10 +87,9 @@ pub async fn process_event(db: &S3Client, val: Value) -> Result<String, String>{
                 })    
             }).unwrap_or_else(|| "".to_string());
 
-        comment = Some(val.get("comment").and_then(|comment|{
+        comment = val.get("comment").and_then(|comment|{
                 comment.get("body").and_then(|v| v.as_str().map(String::from)) 
-            }).unwrap_or_else(|| "".to_string())
-        );
+            }).unwrap_or_else(|| "".to_string());
     }
 
     match find_connectors(db, &project_id, &webhook_event).await {
@@ -95,6 +98,7 @@ pub async fn process_event(db: &S3Client, val: Value) -> Result<String, String>{
                 db,
                 &project_name, 
                 &webhook_event,
+                issue_key,
                 summary,
                 issue_type,
                 assignee,
@@ -135,14 +139,15 @@ pub async fn find_connectors(db: &S3Client, project_id: &str, event: &str) -> Op
 
 pub async fn kirim_notif(db: &S3Client, 
     project: &str, 
-    event: &str, 
+    event: &str,
+    issue_key: String, 
     summary: String,
     issue_type: String,
     assignee: String, 
     created: i64,
     by: &str,
-    changes: Vec<String>,
-    comment: Option<String>, 
+    changes: String,
+    comment: String, 
     connectors: Vec<Connector>) 
     -> Result<(), Box<dyn std::error::Error + Send + Sync>>  {
     let time = chrono::Utc.timestamp_millis_opt(created).unwrap()
@@ -151,12 +156,12 @@ pub async fn kirim_notif(db: &S3Client,
     let mut evo = "".to_owned();
 
     match event{
-        "jira:issue_created" => evo = "Issue created".to_owned(),
-        "jira:issue_updated" => evo = "Issue updated".to_owned(),
-        "jira:issue_deleted" => evo = "Issue deleted".to_owned(),
-        "comment_created" => evo = "Comment created".to_owned(),
-        "comment_updated" => evo = "Comment updated".to_owned(),
-        "comment_deleted" => evo = "Comment deleted".to_owned(),
+        "jira:issue_created" => evo = "created new issue".to_owned(),
+        "jira:issue_updated" => evo = "made changes on an issue".to_owned(),
+        "jira:issue_deleted" => evo = "deleted an issue".to_owned(),
+        "comment_created" => evo = "created new comment".to_owned(),
+        "comment_updated" => evo = "updated a comment".to_owned(),
+        "comment_deleted" => evo = "deleted a comment".to_owned(),
         _=> println!("no event")
     }
 
@@ -166,40 +171,32 @@ pub async fn kirim_notif(db: &S3Client,
     let mut text = "".to_string();
     
     if event.eq("jira:issue_created") || event.eq("jira:issue_deleted") {
-        text =  format!("New Jira Notification!\n\nProject: {}\nEvent: {}\nSummary: {}\nIssue type: {}\nAssignee: {}\nAt: {}\nBy: {}", 
-           project, 
-           evo,
-           summary,
-           issue_type,
-           assignee,
-           time,  
-           by, 
+        text = format!("{} {} in project {}\n\nIssue: {} {}\nIssue type: {}\nAssignee: {}",
+            by,
+            evo,
+            project,
+            issue_key,
+            summary,
+            issue_type,
+            assignee
         );
     } else if event.eq("jira:issue_updated"){
-        let mut s = String::new();
-        for (i, item) in changes.iter().enumerate() {
-            if i > 0 {
-                s.push_str("\n");
-            }
-            s.push_str(item);
-        };
-
-        text =  format!("New Jira Notification!\n\nProject: {}\nEvent: {}\n{} made changes in issue {}\n{}At: {}\n",
-           project, 
+        text = format!("{} {} in project {}\n\nAffected issue: {} {}\nCHANGELOG\n{}",
+           by,
            evo,
-           by, 
+           project, 
+           issue_key,
            summary,
-           s,
-           time
+           changes
         );
     } else {
-        text =  format!("New Jira Notification!\n\nProject: {}\nEvent: {}\nComment: {}\nAt: {}\nBy: {}\nOn Issue: {}\n", 
-           project, 
-           evo,
-           comment.unwrap(),
-           time,
-           by,
-           summary
+        text = format!("{} {} on an issue in project {}\n\nIssue: {} {}\nComment: {:?}\n",
+            by,
+            evo,
+            project,
+            issue_key,
+            summary,
+            comment
         );
     }
    
