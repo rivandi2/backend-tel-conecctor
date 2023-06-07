@@ -66,7 +66,7 @@ impl Client{
         let source_url = format!("https://{}/rest/webhooks/1.0/webhook", webhook.jira_url);
         let payload = Webhook {
             name: format!("User {}'s webhook", user.id.to_hex()).to_string(),
-            url: format!("https://atlassian-connector-api.dev-domain.site/{}", user.id.to_hex()).to_string(),
+            url: format!("https://atlassian-connector-api.dev-domain.site/event/{}", user.id.to_hex()).to_string(),
             events: vec!["jira:issue_created".to_string(),"jira:issue_updated".to_string(),"jira:issue_deleted".to_string(),
                     "comment_created".to_string(),"comment_updated".to_string(),"comment_deleted".to_string()],
             filters: Filter{
@@ -201,7 +201,7 @@ impl Client{
 
             let mut err= String::new();
 
-            let url = format!("https://atlassian-connector-api.dev-domain.site/{}", user.id.to_hex());
+            let url = format!("https://atlassian-connector-api.dev-domain.site/event/{}", user.id.to_hex());
             
             let vector2 = vec![
                 String::from("jira:issue_created"),
@@ -267,7 +267,7 @@ impl Client{
     pub async fn repair_webhook(&self, mongodb: &mongodb::Client, user: User) -> Result<String, JiraError>{
         let fix = Webhook {
             name: format!("User {}'s webhook", user.id.to_hex()).to_string(),
-            url: format!("https://atlassian-connector-api.dev-domain.site/{}", user.id.to_hex()).to_string(),
+            url: format!("https://atlassian-connector-api.dev-domain.site/event/{}", user.id.to_hex()).to_string(),
             events: vec!["jira:issue_created".to_string(),"jira:issue_updated".to_string(),"jira:issue_deleted".to_string(),
                     "comment_created".to_string(),"comment_updated".to_string(),"comment_deleted".to_string()],
             filters: Filter{

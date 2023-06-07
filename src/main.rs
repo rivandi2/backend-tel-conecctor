@@ -44,7 +44,11 @@ async fn main() -> std::io::Result<()>{
                     .route("{id}", web::delete().to(user::delete_by_dev))
                 )
 
-            .service(resource("/event/{id}").route(web::post().to(event::post))) 
+            // .service(resource("/event/{id}").route(web::post().to(event::post))) 
+
+            .service( web::scope("/event")
+                .route("{id}", web::post().to(event::post))
+            )
 
             .service( web::scope("")
                 .wrap(middleware)

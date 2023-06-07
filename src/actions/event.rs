@@ -92,7 +92,7 @@ pub async fn process_event(db: &S3Client, val: Value, id: String) -> Result<Stri
             }).unwrap_or_else(|| "".to_string());
     }
 
-    match find_connectors(db, &project_id, &webhook_event, id).await {
+    match find_connectors(db, &project_id, &webhook_event, id.clone()).await {
         Some(cons)=> {
             let tes = kirim_notif(
                 db,
@@ -102,11 +102,12 @@ pub async fn process_event(db: &S3Client, val: Value, id: String) -> Result<Stri
                 summary,
                 issue_type,
                 assignee,
-                timestamp,  
+                timestamp,
                 &user,
                 changes,
                 comment,  
-                cons).await;
+                cons
+                ,id).await;
             if tes.is_ok(){
                 return Ok("Notif Send".to_string())
             } else {
@@ -171,7 +172,9 @@ pub async fn kirim_notif(db: &S3Client,
     by: &str,
     changes: String,
     comment: String, 
-    connectors: Vec<Connector>) 
+    connectors: Vec<Connector>,
+    id: String
+    ) 
     -> Result<(), Box<dyn std::error::Error + Send + Sync>>  {
     let time = chrono::Utc.timestamp_millis_opt(created).unwrap()
         .with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap())
@@ -232,10 +235,10 @@ pub async fn kirim_notif(db: &S3Client,
                 attempt+=1;
                 let send = teloxide::Bot::new(con.token.clone()).send_message(con.chatid.clone(), &text.clone()).await;
                 if send.is_ok(){
-                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone()).await;
+                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone(), &id).await;
                     break
                 } else if attempt == 3{
-                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone()).await;
+                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone(), &id).await;
                     break
                 }
             }  
@@ -249,10 +252,10 @@ pub async fn kirim_notif(db: &S3Client,
                     .build()
                     .unwrap()).await;
                 if send.is_ok(){
-                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone()).await;
+                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone(), &id).await;
                     break
                 } else if attempt == 3{
-                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone()).await;
+                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone(), &id).await;
                     break
                 }
             }
@@ -261,10 +264,10 @@ pub async fn kirim_notif(db: &S3Client,
                 attempt+=1;      
                 let send = twili.send_message(twilio::OutboundMessage::new(from, &format!("whatsapp:{}", con.token), &text)).await;
                 if send.is_ok(){
-                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone()).await;
+                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone(), &id).await;
                     break
                 } else if attempt == 3{
-                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone()).await;
+                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone(), &id).await;
                     break
                 }
             }

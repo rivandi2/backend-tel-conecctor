@@ -28,9 +28,8 @@ pub async fn add_log(db: &S3Client, name: String, rec: Option<Vec<Log>>, id: Str
     }
 }
 
-pub async fn write_log(db: &S3Client, target_name: String, ev: String, stat: String, att: i32, tim: String) {
-    let id = String::from("temp");
-    match get_one_log(db, target_name.clone(), id.clone()).await {
+pub async fn write_log(db: &S3Client, target_name: String, ev: String, stat: String, att: i32, tim: String, id: &str) {
+    match get_one_log(db, target_name.clone(), id.to_string()).await {
         Ok(mut rec)=> {
             rec.push(Log { 
                 event: ev,
@@ -38,7 +37,7 @@ pub async fn write_log(db: &S3Client, target_name: String, ev: String, stat: Str
                 attempt: att,
                 time: tim,
             });
-            add_log(db, target_name, Some(rec), id).await;
+            add_log(db, target_name, Some(rec), id.to_string()).await;
         },
         Err(e) => println!("{:?}", e)
     }
