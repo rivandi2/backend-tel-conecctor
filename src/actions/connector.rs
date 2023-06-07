@@ -4,25 +4,38 @@ use teloxide::prelude::*;
 use std::io::Read;
 
 use crate::errortype::ConnectorError;
-use crate::models::connector::Connector;
+use crate::models::connector::{ConnectorInput, Connector};
 use crate::actions::log;
 
 const BUCKET: &'static str = "atlassian-connector";
-const FOLDER: &'static str = "Connectors";
-const LOGS: &'static str = "logs";
 
-pub async fn add_connector(db: &S3Client, payload: &Connector) -> Result<String, ConnectorError> {
-    if connector_exist(&db, &payload.name).await {
+pub async fn add_connector(db: &S3Client, payload: ConnectorInput, id: String) -> Result<String, ConnectorError> {
+    if connector_exist(&db, &payload.name, &id).await {
         return Err(ConnectorError::ConCreateExist)
     } else {
+        let file = Connector {
+            name: payload.name,
+            description: payload.description,
+            bot_type: payload.bot_type,
+            token: payload.token,
+            chatid: payload.chatid,
+            active: payload.active,
+            schedule: payload.schedule,
+            duration: payload.duration,
+            project: payload.project,
+            event: payload.event,
+            created_at: chrono::Utc::now()
+                    .with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap()),
+            updated_at: None
+        };
         match db.put_object(PutObjectRequest {
             bucket: BUCKET.to_owned(),
-            key: format!("{}/{}.yml", FOLDER.to_owned(), payload.name),
-            body: Some((serde_yaml::to_string(&payload).unwrap().into_bytes()).into()),
+            key: format!("{}/{}.yml", id, file.name),
+            body: Some((serde_yaml::to_string(&file).unwrap().into_bytes()).into()),
             ..Default::default()
         }).await{
             Ok(_) => {
-                match log::add_log(&db, payload.name.clone(), None).await{
+                match log::add_log(&db, file.name.clone(), None, id).await{
                     Ok(_) => return Ok("Connector successfuly created".to_owned()),
                     Err (e) => return Err(ConnectorError::RusError(e.to_string()))
                 }
@@ -32,17 +45,17 @@ pub async fn add_connector(db: &S3Client, payload: &Connector) -> Result<String,
     }
 }
 
-pub async fn delete_connector(db: &S3Client, target_name: String) -> Result<String, ConnectorError> {
-    if connector_exist(&db, &target_name).await {
+pub async fn delete_connector(db: &S3Client, target_name: String, id: String) -> Result<String, ConnectorError> {
+    if connector_exist(&db, &target_name, &id).await {
         match db.delete_object( DeleteObjectRequest  {
             bucket: BUCKET.to_owned(),
-            key: format!("{}/{}.yml", FOLDER.to_owned(), target_name),
+            key: format!("{}/{}.yml", id, target_name),
             ..Default::default()
         }).await{
             Ok(_) => {
                 let _res = db.delete_object( DeleteObjectRequest  {
                     bucket: BUCKET.to_owned(),
-                    key: format!("{}/{}.csv", LOGS.to_owned(), target_name),
+                    key: format!("{}/{}.csv", id, target_name),
                     ..Default::default()
                 }).await;
                 return Ok("Connector successfuly deleted".to_owned())
@@ -54,12 +67,12 @@ pub async fn delete_connector(db: &S3Client, target_name: String) -> Result<Stri
     }
 }
 
-pub async fn update_connector(db: &S3Client, target_name: String, payload: &Connector) -> Result<String, ConnectorError> {
-    if connector_exist(&db, &target_name).await {
-        if connector_exist(&db, &payload.name).await && &payload.name != &target_name {
+pub async fn update_connector(db: &S3Client, target_name: String, payload: &mut Connector, id: String) -> Result<String, ConnectorError> {
+    if connector_exist(&db, &target_name, &id).await {
+        if connector_exist(&db, &payload.name, &id).await && &payload.name != &target_name {
             return Err(ConnectorError::ConUpdateExist)
         } 
-    
+        
         if payload.bot_type.to_lowercase() == "telegram".to_owned() { 
             let bot = teloxide::Bot::new(&payload.token.to_owned());
 
@@ -83,25 +96,27 @@ pub async fn update_connector(db: &S3Client, target_name: String, payload: &Conn
                 Err(_) => return Err(ConnectorError::TokenInval)
             }
         };
+        payload.updated_at = Some(chrono::Utc::now()
+            .with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap()));
 
         match db.put_object(PutObjectRequest {
             bucket: BUCKET.to_string(),
-            key: format!("{}/{}.yml", FOLDER.to_owned(), payload.name),
+            key: format!("{}/{}.yml", id, payload.name),
             body: Some((serde_yaml::to_string(&payload).unwrap().into_bytes()).into()),
             ..Default::default()
         }).await{
             Ok(_) => {          
                 if &payload.name != &target_name {
-                    match db.delete_object(DeleteObjectRequest  {
+                    match db.delete_object(DeleteObjectRequest {
                         bucket: BUCKET.to_owned(),
-                        key: format!("{}/{}.yml", FOLDER.to_owned(), target_name),
+                        key: format!("{}/{}.yml", id, target_name),
                         ..Default::default()
                     }).await {
                         Ok(_) =>  {
-                            log::add_log(&db, payload.name.clone(), Some(log::get_one_log(&db, target_name.clone()).await.unwrap())).await;
+                            log::add_log(&db, payload.name.clone(), Some(log::get_one_log(&db, target_name.clone(), id.clone()).await.unwrap()), id.clone()).await;
                             db.delete_object(DeleteObjectRequest  {
                                 bucket: BUCKET.to_owned(),
-                                key: format!("{}/{}.csv", LOGS.to_owned(), target_name),
+                                key: format!("{}/{}.csv", id, target_name),
                                 ..Default::default()
                             }).await;
 
@@ -120,10 +135,10 @@ pub async fn update_connector(db: &S3Client, target_name: String, payload: &Conn
     }
 }
 
-pub async fn get_connectors(db: &S3Client) -> Result<Vec<Connector>, ConnectorError> {
+pub async fn get_connectors(db: &S3Client, id: String) -> Result<Vec<Connector>, ConnectorError> {
     match db.list_objects_v2(ListObjectsV2Request {
         bucket: BUCKET.to_owned(),
-        prefix: Some(format!("{}/", FOLDER.to_owned())),
+        prefix: Some(format!("{}/", id)),
         ..Default::default()
     }).await {
         Ok(object) => {
@@ -167,11 +182,11 @@ pub async fn get_connectors(db: &S3Client) -> Result<Vec<Connector>, ConnectorEr
 }
 
 #[allow(warnings)]
-pub async fn get_one_connector(db: &S3Client, target_name: String) -> Option<Connector> {
-    if connector_exist(&db, &target_name).await {
+pub async fn get_one_connector(db: &S3Client, target_name: String, id: String) -> Option<Connector> {
+    if connector_exist(&db, &target_name, &id).await {
         match db.get_object(GetObjectRequest {
             bucket: BUCKET.to_owned(),
-            key: format!("{}/{}.yml", FOLDER.to_owned(), target_name),
+            key: format!("{}/{}.yml", id, target_name),
             ..Default::default()
         }).await {
             Ok(ob) =>{
@@ -190,10 +205,10 @@ pub async fn get_one_connector(db: &S3Client, target_name: String) -> Option<Con
     }
 }
 
-pub async fn connector_exist(db: &S3Client, name: &str) -> bool {
+pub async fn connector_exist(db: &S3Client, name: &str, id: &str) -> bool {
     match db.head_object(HeadObjectRequest {
         bucket: BUCKET.to_string(),
-        key: format!("{}/{}.yml", FOLDER.to_owned(), name.to_owned()),
+        key: format!("{}/{}.yml", id, name.to_owned()),
         ..Default::default()
     }).await{
         Ok(_) => true,

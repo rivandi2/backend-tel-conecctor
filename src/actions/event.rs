@@ -6,7 +6,7 @@ use teloxide::requests::Requester;
 use crate::actions::{connector, log};
 use crate::models::connector::Connector;
 
-pub async fn process_event(db: &S3Client, val: Value) -> Result<String, String>{
+pub async fn process_event(db: &S3Client, val: Value, id: String) -> Result<String, String>{
     let timestamp = val.get("timestamp").and_then(|v| v.as_i64())
             .unwrap_or(0) as i64;
     
@@ -92,7 +92,7 @@ pub async fn process_event(db: &S3Client, val: Value) -> Result<String, String>{
             }).unwrap_or_else(|| "".to_string());
     }
 
-    match find_connectors(db, &project_id, &webhook_event).await {
+    match find_connectors(db, &project_id, &webhook_event, id).await {
         Some(cons)=> {
             let tes = kirim_notif(
                 db,
@@ -119,8 +119,8 @@ pub async fn process_event(db: &S3Client, val: Value) -> Result<String, String>{
    
 }
 
-pub async fn find_connectors(db: &S3Client, project_id: &str, event: &str) -> Option<Vec<Connector>> {
-    match connector::get_connectors(&db).await {
+pub async fn find_connectors(db: &S3Client, project_id: &str, event: &str, id: String) -> Option<Vec<Connector>> {
+    match connector::get_connectors(&db, id).await {
         Ok(cons) => {
             let now = (chrono::Utc::now() + chrono::Duration::hours(7)).naive_utc().time();
 
@@ -131,13 +131,21 @@ pub async fn find_connectors(db: &S3Client, project_id: &str, event: &str) -> Op
                     && con.active
                     && if con.schedule {
                         let split: Vec<&str> = con.duration.split('-').collect();
+                        let s0 = chrono::NaiveTime::parse_from_str(split[0], "%H:%M").unwrap();
+                        let s1 = chrono::NaiveTime::parse_from_str(split[1], "%H:%M").unwrap();
 
-                        if now >= chrono::NaiveTime::parse_from_str(split[0], "%H:%M").unwrap() 
-                        && now <= chrono::NaiveTime::parse_from_str(split[1], "%H:%M").unwrap() 
-                        {
-                            return true
-                        } else {
-                            return false
+                        if s0 > s1 {
+                            if (now >= s0) || (s0 >= now && now <= s1) {
+                                return true
+                            }else {
+                                return false
+                            }
+                        } else { //s0 < s1 normal case
+                            if now >= s0 && now <= s1 {   
+                                return true
+                            } else {
+                                return false
+                            }
                         }
                     } else {
                         return true

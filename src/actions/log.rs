@@ -5,9 +5,8 @@ use crate::errortype::ConnectorError;
 use crate::models::log::Log;
 
 const BUCKET: &'static str = "atlassian-connector";
-const LOGS: &'static str = "logs";
 
-pub async fn add_log(db: &S3Client, name: String, rec: Option<Vec<Log>>) -> Result<String, ConnectorError> {
+pub async fn add_log(db: &S3Client, name: String, rec: Option<Vec<Log>>, id: String) -> Result<String, ConnectorError> {
     let mut wtr = csv::Writer::from_writer(vec![]);
     wtr.write_record(&["event","status","attempt","time"]);
     if rec.is_some() {
@@ -20,7 +19,7 @@ pub async fn add_log(db: &S3Client, name: String, rec: Option<Vec<Log>>) -> Resu
 
     match db.put_object(PutObjectRequest {
         bucket: BUCKET.to_owned(),
-        key: format!("{}/{}.csv", LOGS.to_owned(), name),
+        key: format!("{}/{}.csv", id, name),
         body: Some(data.into_bytes().into()),
         ..Default::default()
     }).await{
@@ -30,7 +29,8 @@ pub async fn add_log(db: &S3Client, name: String, rec: Option<Vec<Log>>) -> Resu
 }
 
 pub async fn write_log(db: &S3Client, target_name: String, ev: String, stat: String, att: i32, tim: String) {
-    match get_one_log(db, target_name.clone()).await {
+    let id = String::from("temp");
+    match get_one_log(db, target_name.clone(), id.clone()).await {
         Ok(mut rec)=> {
             rec.push(Log { 
                 event: ev,
@@ -38,16 +38,16 @@ pub async fn write_log(db: &S3Client, target_name: String, ev: String, stat: Str
                 attempt: att,
                 time: tim,
             });
-            add_log(db, target_name, Some(rec)).await;
+            add_log(db, target_name, Some(rec), id).await;
         },
         Err(e) => println!("{:?}", e)
     }
 }
 
-pub async fn get_one_log(db: &S3Client, target_name: String) -> Result< Vec<Log>, ConnectorError>{
+pub async fn get_one_log(db: &S3Client, target_name: String, id: String) -> Result< Vec<Log>, ConnectorError>{
     match db.get_object(GetObjectRequest {
         bucket: BUCKET.to_owned(),
-        key: format!("{}/{}.csv", LOGS.to_owned(), target_name),
+        key: format!("{}/{}.csv", id, target_name),
         ..Default::default()
     }).await {
         Ok(ob) =>{
@@ -61,9 +61,13 @@ pub async fn get_one_log(db: &S3Client, target_name: String) -> Result< Vec<Log>
                 let records: Vec<Log> = csv_reader.deserialize::<Log>().map(|res| res.unwrap()).collect();
                 return records
             }).await.expect("Task panicked");
+            println!("{:?}", result);
             Ok(result)
         },
-        Err(e) => return  Err(ConnectorError::RusError(e.to_string()))
+        Err(e) => 
+        {
+            return  Err(ConnectorError::RusError(e.to_string()))
+        }    
     }
     
 }

@@ -57,15 +57,27 @@ pub struct ProjectList {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EventType{
-    pub id: i32,
-    pub name: String
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct SaringProject{
     pub id: String,
     pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Filter{
+    #[serde(rename="issue-related-events-section")]
+    pub issue_related_events_section: String
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Webhook{
+    pub name: String,
+    pub url: String,
+    pub events: Vec<String>,
+    pub filters: Filter,
+
+    #[serde(rename="excludeBody")]
+    pub exclude_body: bool,
+    pub enabled: bool
 }
 
 

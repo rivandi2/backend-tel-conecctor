@@ -10,7 +10,7 @@ pub struct Response{
     pub message: String
 }
 
-pub async fn post(db: web::Data<client::rusoto::Client>, req: HttpRequest, payload: web::Json<Value>) -> HttpResponse {
+pub async fn post(db: web::Data<client::rusoto::Client>, req: HttpRequest, payload: web::Json<Value>, id: web::Path<String>) -> HttpResponse {
     let event_key = req
         .headers()
         .get("user-agent")
@@ -18,7 +18,7 @@ pub async fn post(db: web::Data<client::rusoto::Client>, req: HttpRequest, paylo
         .unwrap_or("");
 
     if event_key.starts_with("Atlassian") {
-        match event::process_event(&db.s3, payload.into_inner()).await{
+        match event::process_event(&db.s3, payload.into_inner(), id.to_string()).await{
             Ok(o)=>println!("{:?}", o),
             Err(e)=>println!("{:?}", e)
         };
@@ -29,3 +29,4 @@ pub async fn post(db: web::Data<client::rusoto::Client>, req: HttpRequest, paylo
     }
     
 }
+
