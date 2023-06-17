@@ -1,14 +1,8 @@
 use actix_web::{web, HttpResponse, HttpRequest};
-use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
 use crate::actions::event;
 use crate::client;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Response{
-    pub message: String
-}
 
 pub async fn post(db: web::Data<client::rusoto::Client>, req: HttpRequest, payload: web::Json<Value>, id: web::Path<String>) -> HttpResponse {
     let event_key = req

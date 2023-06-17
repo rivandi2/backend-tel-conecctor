@@ -4,115 +4,99 @@ use rusoto_s3::S3Client;
 use teloxide::requests::Requester;
 
 use crate::actions::{connector, log};
-use crate::models::connector::Connector;
+use crate::models::{connector::Connector, event::Event};
 
 pub async fn process_event(db: &S3Client, val: Value, id: String) -> Result<String, String>{
-    let timestamp = val.get("timestamp").and_then(|v| v.as_i64())
-            .unwrap_or(0) as i64;
-    
-    let webhook_event = val.get("webhookEvent").and_then(|v| v.as_str().map(String::from))
-            .unwrap_or_else(|| "".to_string());
+    let mut event = Event {
+        timestamp: val.get("timestamp").and_then(|v| v.as_i64())
+                    .unwrap_or(0) as i64,
 
-    let project_id = val.get("issue").and_then(|issue|{
+        webhook_event: val.get("webhookEvent").and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_else(|| "".to_string()),
+
+        project_id: val.get("issue").and_then(|issue|{
+                issue.get("fields").and_then(|fields|{
+                    fields.get("project").and_then(|project|{
+                        project.get("id").and_then(|v| v.as_str().map(String::from))
+                    })
+                })    
+            }).unwrap_or_else(|| "".to_string()),
+
+        project_name: val.get("issue").and_then(|issue|{
+                issue.get("fields").and_then(|fields|{
+                    fields.get("project").and_then(|project|{
+                        project.get("name").and_then(|v| v.as_str().map(String::from))
+                    })
+                })    
+            }).unwrap_or_else(|| "".to_string()),
+
+        issue_key: val.get("issue").and_then(|issue|{
+                issue.get("key").and_then(|v| v.as_str().map(String::from))       
+            }).unwrap_or_else(|| "".to_string()),   
+
+        summary: val.get("issue").and_then(|issue|{
             issue.get("fields").and_then(|fields|{
-                fields.get("project").and_then(|project|{
-                    project.get("id").and_then(|v| v.as_str().map(String::from))
-                })
-            })    
-        }).unwrap_or_else(|| "".to_string());
+                    fields.get("summary").and_then(|v| v.as_str().map(String::from))
+                })    
+            }).unwrap_or_else(|| "".to_string()),   
 
-    let project_name = val.get("issue").and_then(|issue|{
-            issue.get("fields").and_then(|fields|{
-                fields.get("project").and_then(|project|{
-                    project.get("name").and_then(|v| v.as_str().map(String::from))
-                })
-            })    
-        }).unwrap_or_else(|| "".to_string());  
+        issue_type: val.get("issue").and_then(|issue|{
+                issue.get("fields").and_then(|fields|{
+                    fields.get("issuetype").and_then(|issuetype|{
+                        issuetype.get("name").and_then(|v| v.as_str().map(String::from))
+                    })
+                })    
+            }).unwrap_or_else(|| "".to_string()), 
 
-    let issue_key = val.get("issue").and_then(|issue|{
-        issue.get("key").and_then(|v| v.as_str().map(String::from))       
-    }).unwrap_or_else(|| "".to_string());
+        assignee: val.get("issue").and_then(|issue|{
+                issue.get("fields").and_then(|fields|{
+                    fields.get("assignee").and_then(|assignee|{
+                        assignee.get("displayName").and_then(|v| v.as_str().map(String::from))
+                    })
+                })    
+            }).unwrap_or_else(|| "null".to_string()), 
 
-    let summary = val.get("issue").and_then(|issue|{
-        issue.get("fields").and_then(|fields|{
-                fields.get("summary").and_then(|v| v.as_str().map(String::from))
-            })    
-        }).unwrap_or_else(|| "".to_string());
+        user: String::new(),
 
-    let issue_type = val.get("issue").and_then(|issue|{
-        issue.get("fields").and_then(|fields|{
-            fields.get("issuetype").and_then(|issuetype|{
-                issuetype.get("name").and_then(|v| v.as_str().map(String::from))
-            })
-        })    
-    }).unwrap_or_else(|| "".to_string());
+        changes: String::new(),
 
-    let assignee = val.get("issue").and_then(|issue|{
-        issue.get("fields").and_then(|fields|{
-            fields.get("assignee").and_then(|assignee|{
-                assignee.get("displayName").and_then(|v| v.as_str().map(String::from))
-            })
-        })    
-    }).unwrap_or_else(|| "null".to_string());      
-
-    let mut user = "u".to_string();
-
-    let mut changes = String::new();
-
-    let mut comment =  String::new();
-
-    if webhook_event.contains("issue") {
-        user = val.get("user").and_then(|user|{
+        comment:  String::new(),                    
+    };
+        
+    if event.webhook_event.contains("issue") {
+        event.user = val.get("user").and_then(|user|{
                     user.get("displayName").and_then(|v| v.as_str().map(String::from)) 
             }).unwrap_or_else(|| "".to_string());
 
-        if webhook_event.contains("updated") {
+        if event.webhook_event.contains("updated") {
             let items = val.get("changelog").and_then(|changelog| { 
                     changelog.get("items").and_then(|items| items.as_array())
                 }).unwrap();
 
             for it in items{
-                changes.push_str(&format!("{}: {} -> {}\n", 
+                event.changes.push_str(&format!("{}: {} -> {}\n", 
                     it.get("field").and_then(|v| v.as_str().map(String::from)).unwrap_or("".to_string()), 
                     it.get("fromString").and_then(|v| v.as_str().map(String::from)).unwrap_or("null".to_string()), 
                     it.get("toString").and_then(|v| v.as_str().map(String::from)).unwrap_or("null".to_string()))
                 );
             }    
         }
-
-    } else if webhook_event.contains("comment") {
-        user = val.get("comment").and_then(|comment|{
+    } else if event.webhook_event.contains("comment") {
+        event.user = val.get("comment").and_then(|comment|{
                 comment.get("updateAuthor").and_then(|update_author|{
                     update_author.get("displayName").and_then(|v| v.as_str().map(String::from)) 
                 })    
             }).unwrap_or_else(|| "".to_string());
 
-        comment = val.get("comment").and_then(|comment|{
+        event.comment = val.get("comment").and_then(|comment|{
                 comment.get("body").and_then(|v| v.as_str().map(String::from)) 
             }).unwrap_or_else(|| "".to_string());
     }
 
-    match find_connectors(db, &project_id, &webhook_event, id.clone()).await {
+    match find_connectors(db, &event.project_id, &event.webhook_event, id.clone()).await {
         Some(cons)=> {
-            let tes = kirim_notif(
-                db,
-                &project_name, 
-                &webhook_event,
-                issue_key,
-                summary,
-                issue_type,
-                assignee,
-                timestamp,
-                &user,
-                changes,
-                comment,  
-                cons
-                ,id).await;
-            if tes.is_ok(){
-                return Ok("Notif Send".to_string())
-            } else {
-                return Err("Send fail somehow".to_string())
-            }
+            send_notification(db, event,cons,id).await;
+            return Ok("Event processed".to_string())
 
         }
         None => return Ok("No Connector Related Found".to_string())
@@ -141,7 +125,7 @@ pub async fn find_connectors(db: &S3Client, project_id: &str, event: &str, id: S
                             }else {
                                 return false
                             }
-                        } else { //s0 < s1 normal case
+                        } else {
                             if now >= s0 && now <= s1 {   
                                 return true
                             } else {
@@ -161,28 +145,13 @@ pub async fn find_connectors(db: &S3Client, project_id: &str, event: &str, id: S
     }
 }
 
-pub async fn kirim_notif(db: &S3Client, 
-    project: &str, 
-    event: &str,
-    issue_key: String, 
-    summary: String,
-    issue_type: String,
-    assignee: String, 
-    created: i64,
-    by: &str,
-    changes: String,
-    comment: String, 
-    connectors: Vec<Connector>,
-    id: String
-    ) 
-    -> Result<(), Box<dyn std::error::Error + Send + Sync>>  {
-    let time = chrono::Utc.timestamp_millis_opt(created).unwrap()
+pub async fn send_notification(db: &S3Client, event: Event, connectors: Vec<Connector>, id: String ) {
+    let time = chrono::Utc.timestamp_millis_opt(event.timestamp).unwrap()
         .with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap())
         .format("%d/%m/%Y %H:%M").to_string();
     let mut evo = "".to_owned();
-    
 
-    match event{
+    match event.webhook_event.as_ref() {
         "jira:issue_created" => evo = "created new issue".to_owned(),
         "jira:issue_updated" => evo = "made changes on an issue".to_owned(),
         "jira:issue_deleted" => evo = "deleted an issue".to_owned(),
@@ -192,86 +161,50 @@ pub async fn kirim_notif(db: &S3Client,
         _=> println!("no event")
     }
 
-    let twili = twilio::Client::new("AC43c81da3609460c9dad7db7e54866b57", "ecdc188c518d56fad25d7eafadcc10e8");
-    let from = "whatsapp:+14155238886";
-
     let mut text = "".to_string();
     
-    if event.eq("jira:issue_created") || event.eq("jira:issue_deleted") {
+    if event.webhook_event.eq("jira:issue_created") || event.webhook_event.eq("jira:issue_deleted") {
         text = format!("{} {} in project {}\n\nIssue: {} {}\nIssue type: {}\nAssignee: {}",
-            by,
+            event.user,
             evo,
-            project,
-            issue_key,
-            summary,
-            issue_type,
-            assignee
+            event.project_name,
+            event.issue_key,
+            event.summary,
+            event.issue_type,
+            event.assignee
         );
-    } else if event.eq("jira:issue_updated"){
+    } else if event.webhook_event.eq("jira:issue_updated"){
         text = format!("{} {} in project {}\n\nAffected issue: {} {}\nCHANGELOG\n{}",
-           by,
+           event.user,
            evo,
-           project, 
-           issue_key,
-           summary,
-           changes
+           event.project_name, 
+           event.issue_key,
+           event.summary,
+           event.changes
         );
     } else {
         text = format!("{} {} on an issue in project {}\n\nIssue: {} {}\nComment: {:?}\n",
-            by,
+            event.user,
             evo,
-            project,
-            issue_key,
-            summary,
-            comment
+            event.project_name,
+            event.issue_key,
+            event.summary,
+            event.comment
         );
     }
    
     for con in connectors {
         let mut attempt = 0;
-        
-        if con.bot_type.to_lowercase().eq("telegram") {  
-            loop {
-                attempt+=1;
-                let send = teloxide::Bot::new(con.token.clone()).send_message(con.chatid.clone(), &text.clone()).await;
-                if send.is_ok(){
-                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone(), &id).await;
-                    break
-                } else if attempt == 3{
-                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone(), &id).await;
-                    break
-                }
-            }  
+        loop {
+            attempt+=1;
+            let send = teloxide::Bot::new(con.token.clone()).send_message(con.chatid.clone(), &text.clone()).await;
+            if send.is_ok(){
+                log::write_log(&db, con.name, event.webhook_event.to_string(), "sent".to_string(), attempt, time.clone(), &id).await;
+                break
+            } else if attempt == 3{
+                log::write_log(&db, con.name, event.webhook_event.to_string(), "fail".to_string(), attempt, time.clone(), &id).await;
+                break
+            }
         }  
-        else if con.bot_type.to_lowercase().eq("slack") {
-            loop {
-                attempt+=1;
-                let send = slack_hook2::Slack::new(con.token.clone()).unwrap()
-                    .send(&slack_hook2::PayloadBuilder::new()
-                    .text(text.clone())
-                    .build()
-                    .unwrap()).await;
-                if send.is_ok(){
-                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone(), &id).await;
-                    break
-                } else if attempt == 3{
-                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone(), &id).await;
-                    break
-                }
-            }
-        } else if con.bot_type.to_lowercase().eq("whatsapp") {   
-            loop {
-                attempt+=1;      
-                let send = twili.send_message(twilio::OutboundMessage::new(from, &format!("whatsapp:{}", con.token), &text)).await;
-                if send.is_ok(){
-                    log::write_log(&db, con.name, event.to_string(), "sent".to_string(), attempt, time.clone(), &id).await;
-                    break
-                } else if attempt == 3{
-                    log::write_log(&db, con.name, event.to_string(), "fail".to_string(), attempt, time.clone(), &id).await;
-                    break
-                }
-            }
-        }       
     }
-    Ok(())
 }

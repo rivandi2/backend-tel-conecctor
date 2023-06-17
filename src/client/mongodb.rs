@@ -108,10 +108,8 @@ impl Client {
                             return Err("Invalid password".to_string())
                         }
                     },
-                    Err(e)=> println!("{}", e.to_string())
+                    Err(e)=> return Err(e.to_string())
                 }
-                
-                return Err("Password incorrect".to_string())
             },
             Err(e) => return Err(e.to_owned().to_string())
         }

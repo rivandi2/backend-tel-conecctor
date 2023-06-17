@@ -4,18 +4,6 @@ use serde::{Serialize, Deserialize};
 
 use crate::{client, models::user::UserInput, middleware, middleware::Claims};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Cred{
-    pub email: String,
-    pub api_key: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Login{
-    pub username: String,
-    pub password: String,
-}
-
 pub async fn register(db: web::Data<client::rusoto::Client>, client: web::Data<client::mongodb::Client>, payload: web::Json<UserInput>) -> HttpResponse {
     match client.create_user(&db.s3, payload.clone()).await {
         Ok(ok) => return HttpResponse::Ok().json(ok),

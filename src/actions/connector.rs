@@ -16,7 +16,6 @@ pub async fn add_connector(db: &S3Client, payload: ConnectorInput, id: String) -
         let file = Connector {
             name: payload.name,
             description: payload.description,
-            bot_type: payload.bot_type,
             token: payload.token,
             chatid: payload.chatid,
             active: payload.active,
@@ -73,29 +72,16 @@ pub async fn update_connector(db: &S3Client, target_name: String, payload: &mut 
             return Err(ConnectorError::ConUpdateExist)
         } 
         
-        if payload.bot_type.to_lowercase() == "telegram".to_owned() { 
-            let bot = teloxide::Bot::new(&payload.token.to_owned());
+        let bot = teloxide::Bot::new(&payload.token.to_owned());
 
-            if let Err(_e) = bot.get_me().await {
-                return Err(ConnectorError::TokenInval)
-            }
+        if let Err(_e) = bot.get_me().await {
+            return Err(ConnectorError::TokenInval)
+        }
 
-            if let Err(_e) = bot.get_chat(payload.chatid.clone()).send().await {
-                return Err(ConnectorError::ChatidInval)
-            }
-        } else if payload.bot_type.to_lowercase() == "slack".to_owned() {
-            match slack_hook2::Slack::new(&payload.token) {
-                Ok(s)=> {
-                    if let Err(_) = s.send(&slack_hook2::PayloadBuilder::new()
-                        .text("This is a connection test message")
-                        .build()
-                        .unwrap()).await {
-                        return Err(ConnectorError::TokenInval)
-                    }
-                },
-                Err(_) => return Err(ConnectorError::TokenInval)
-            }
-        };
+        if let Err(_e) = bot.get_chat(payload.chatid.clone()).send().await {
+            return Err(ConnectorError::ChatidInval)
+        }
+        
         payload.updated_at = Some(chrono::Utc::now()
             .with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap()));
 

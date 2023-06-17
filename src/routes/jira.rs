@@ -5,12 +5,6 @@ use serde::{Serialize, Deserialize};
 use crate::{client, middleware, middleware::Claims};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Cred{
-    pub email: String,
-    pub api_key: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct WebhookInput{
     pub email: String,
     pub api_key: String,

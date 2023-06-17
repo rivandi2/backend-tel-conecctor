@@ -57,7 +57,7 @@ pub struct ProjectList {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SaringProject{
+pub struct Project{
     pub id: String,
     pub name: String,
 }

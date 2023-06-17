@@ -20,5 +20,4 @@ pub enum ConnectorError {
     #[error("Bot token invalid")] TokenInval,
     #[error("Chatid invalid [Bot not invited to chatid]")] ChatidInval,
     #[error("Bucket error {0}")] RusError(String),
-    // #[error("Log not found")] LogNotFound
 }

@@ -5,7 +5,6 @@ use chrono::{DateTime, FixedOffset};
 pub struct ConnectorInput{
     pub name: String,
     pub description: String,
-    pub bot_type: String,
     pub token: String,
     pub chatid: String,
     pub active: bool,
@@ -19,7 +18,6 @@ pub struct ConnectorInput{
 pub struct Connector{
     pub name: String,
     pub description: String,
-    pub bot_type: String,
     pub token: String,
     pub chatid: String,
     pub active: bool,
