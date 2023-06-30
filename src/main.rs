@@ -38,12 +38,6 @@ async fn main() -> std::io::Result<()>{
             .service(resource("/register").route(web::post().to(user::register)))
             .service(resource("/login").route(web::get().to(user::login)))
 
-            //for ease of development only delete on final
-            .service( web::scope("/developmentonly")
-                    .route("", web::get().to(user::get_all))
-                    .route("{id}", web::delete().to(user::delete_by_dev))
-                )
-
             .service( web::scope("/event")
                 .route("{id}", web::post().to(event::post))
             )

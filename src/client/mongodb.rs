@@ -177,23 +177,6 @@ impl Client {
             Err(e) => return Err(e.to_string())
         }
     }
-
-    /// development only ///
-    pub async fn get_users(&self) -> Result<Vec<User>, mongodb::error::Error> {
-        match self
-            .mongodb
-            .database("telconnect")
-            .collection::<User>("users")
-            .find(None, None)
-            .await {
-            Ok(cursor) => {
-                let doc = cursor.try_collect().await.unwrap_or_else(|_| vec![]);
-                return Ok(doc)
-            }
-            Err(e) => return Err(e)
-        }
-    }
-
 }
 
 

@@ -54,7 +54,7 @@ pub async fn process_event(db: &S3Client, val: Value, id: String) -> Result<Stri
                         assignee.get("displayName").and_then(|v| v.as_str().map(String::from))
                     })
                 })    
-            }).unwrap_or_else(|| "null".to_string()), 
+            }).unwrap_or_else(|| "-".to_string()), 
 
         user: String::new(),
 
@@ -76,8 +76,8 @@ pub async fn process_event(db: &S3Client, val: Value, id: String) -> Result<Stri
             for it in items{
                 event.changes.push_str(&format!("{}: {} -> {}\n", 
                     it.get("field").and_then(|v| v.as_str().map(String::from)).unwrap_or("".to_string()), 
-                    it.get("fromString").and_then(|v| v.as_str().map(String::from)).unwrap_or("null".to_string()), 
-                    it.get("toString").and_then(|v| v.as_str().map(String::from)).unwrap_or("null".to_string()))
+                    it.get("fromString").and_then(|v| v.as_str().map(String::from)).unwrap_or("-".to_string()), 
+                    it.get("toString").and_then(|v| v.as_str().map(String::from)).unwrap_or("-".to_string()))
                 );
             }    
         }
@@ -97,7 +97,6 @@ pub async fn process_event(db: &S3Client, val: Value, id: String) -> Result<Stri
         Some(cons)=> {
             send_notification(db, event,cons,id).await;
             return Ok("Event processed".to_string())
-
         }
         None => return Ok("No Connector Related Found".to_string())
     }    
